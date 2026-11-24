@@ -280,21 +280,22 @@
     if (a !== b) throw err('Hai lần nhập mật khẩu không khớp.');
   }
   SBW.pwCheck = pwCheck;
-  function showSetPw(title, why) {
+  /** save(pw) defaults to the stored session; a reset link passes its own (tokens kept in memory only). cancel defaults to sign-out. */
+  function showSetPw(title, why, save, cancel) {
     var el = box();
     form(el, '<h1>' + esc(title) + '</h1><p class="sbw-s">' + esc(why) + '</p>' +
       '<label for="sbwP">Mật khẩu mới</label><input id="sbwP" type="password" autocomplete="new-password" required>' +
       '<label for="sbwP2">Nhập lại</label><input id="sbwP2" type="password" autocomplete="new-password" required>' +
       '<p class="sbw-s" style="margin:8px 0 0">Tối thiểu ' + C.minPw + ' ký tự, có chữ hoa, chữ thường và số.</p>' +
-      '<button class="sbw-go" type="submit">Lưu mật khẩu</button><button class="sbw-lk" type="button" id="sbwO">Đăng xuất</button>',
+      '<button class="sbw-go" type="submit">Lưu mật khẩu</button><button class="sbw-lk" type="button" id="sbwO">' + (cancel ? 'Huỷ' : 'Đăng xuất') + '</button>',
       function (f, say) {
         var a = f.sbwP.value, b = f.sbwP2.value; pwCheck(a, b);
-        return api('PUT', '/auth/v1/user', { password: a }).then(function () {
+        return (save ? save(a) : api('PUT', '/auth/v1/user', { password: a })).then(function () {
           say('Đã đổi mật khẩu.', true);
           return afterLogin();
         });
       });
-    el.querySelector('#sbwO').onclick = function () { SBW.signOut(); };
+    el.querySelector('#sbwO').onclick = cancel || function () { SBW.signOut(); };
   }
   SBW.changePassword = function () { showSetPw('Đổi mật khẩu', 'Đặt mật khẩu mới cho tài khoản ' + ((SBW.user && SBW.user.email) || '') + '.'); };
 
@@ -356,12 +357,17 @@
         setTimeout(function () { window.alert('Bạn đang đăng nhập nên liên kết đặt lại mật khẩu đã bị bỏ qua. Muốn đổi mật khẩu, dùng nút "Đổi mật khẩu".'); }, 50);
         return;
       }
+      // Link tokens stay in memory: nothing is stored (no session) until the user sets a password for the account shown.
       http('GET', '/auth/v1/user', undefined, q.access_token).then(function (u) {
-        wipeData();
-        keep({ access_token: q.access_token, refresh_token: q.refresh_token, expires_in: q.expires_in, user: u });
-        SBW.user = { id: u.id, email: u.email };
-        showSetPw('Đặt lại mật khẩu', 'Tài khoản: ' + u.email + '. Nếu đây không phải email của bạn, bấm Đăng xuất và đừng đặt mật khẩu.');
-      }).catch(function (e) { signOutLocal(); showLogin(e.message); });
+        showSetPw('Đặt lại mật khẩu', 'Tài khoản: ' + u.email + '. Nếu đây không phải email của bạn, bấm Huỷ.',
+          function (pw) {
+            return http('PUT', '/auth/v1/user', { password: pw }, q.access_token).then(function () {
+              wipeData();
+              keep({ access_token: q.access_token, refresh_token: q.refresh_token, expires_in: q.expires_in, user: u });
+            });
+          },
+          function () { q = null; showLogin(); });
+      }).catch(function (e) { showLogin(e.message); });
       return;
     }
     if (!lsGet()) { showLogin(); return; }
