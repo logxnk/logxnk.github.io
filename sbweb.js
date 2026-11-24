@@ -347,13 +347,20 @@
     var q = fromHash();
     if (q && q.error) { showLogin(/expired/i.test(q.error_description || '') ? 'Liên kết đặt lại đã hết hạn. Gửi lại thư mới.' : viMsg(q.error_description || q.error)); return; }
     if (q && q.access_token && q.refresh_token) {
-      wipeData();
-      keep({ access_token: q.access_token, refresh_token: q.refresh_token, expires_in: q.expires_in, user: null });
+      // Tokens in the address bar can come from a link someone else made (login CSRF): accept only password links,
+      // never replace a live session silently, and show the account before anything is saved.
+      if (q.type !== 'recovery' && q.type !== 'invite') { showLogin('Liên kết không hợp lệ.'); return; }
+      var cur = lsGet();
+      if (cur && cur.rt && now() - (cur.t0 || 0) <= C.maxAgeMs) {
+        afterLogin().catch(function (e) { showLogin(e.message); });
+        setTimeout(function () { window.alert('Bạn đang đăng nhập nên liên kết đặt lại mật khẩu đã bị bỏ qua. Muốn đổi mật khẩu, dùng nút "Đổi mật khẩu".'); }, 50);
+        return;
+      }
       http('GET', '/auth/v1/user', undefined, q.access_token).then(function (u) {
-        var s = lsGet(); s.uid = u.id; s.email = u.email; lsSet(s);
+        wipeData();
+        keep({ access_token: q.access_token, refresh_token: q.refresh_token, expires_in: q.expires_in, user: u });
         SBW.user = { id: u.id, email: u.email };
-        if (q.type === 'recovery' || q.type === 'invite') showSetPw('Đặt lại mật khẩu', 'Đặt mật khẩu mới cho ' + u.email + '.');
-        else return afterLogin();
+        showSetPw('Đặt lại mật khẩu', 'Tài khoản: ' + u.email + '. Nếu đây không phải email của bạn, bấm Đăng xuất và đừng đặt mật khẩu.');
       }).catch(function (e) { signOutLocal(); showLogin(e.message); });
       return;
     }

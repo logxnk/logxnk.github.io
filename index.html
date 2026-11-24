@@ -5,7 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' data: https://knmgtxfqguxquuvztvnm.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow">
-<script src="sbweb.js?v=1795495390546"></script>
+<script src="sbweb.js?v=1795495611584"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PVT — Báo cáo vận hành</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1878,7 +1878,7 @@ function aiBlocks(P, A, xeIdx) {
 // ---------- Ngôn ngữ (VI / EN) + chế độ sáng / tối + phiên bản ----------
 // English mode translates what is on screen: text nodes and title / placeholder / aria-label, longest phrase first, whole words only.
 // Option values, data keys and AI answers (.msgs) are never changed. Elements with [data-nt] are skipped (brand name).
-var BUILD = {"ver":"web","dep":0,"at":"24/11/2026 11:43","note":"Bản web logxnk.github.io"};
+var BUILD = {"ver":"web","dep":0,"at":"24/11/2026 11:46","note":"Bản web logxnk.github.io"};
 var UI = { lang: store('lang') === 'en' ? 'en' : 'vi', theme: store('theme') || ((window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'), re: null };
 function trs(s) {
   if (UI.lang !== 'en' || s === null || s === undefined || typeof s !== 'string' || !/[^\x00-\x7F]/.test(s)) return s;
