@@ -1,7 +1,8 @@
 /* sbweb.js — web edition (logxnk.github.io) of the PVT report app.
  * Replaces google.script.run with Supabase: email/password login (GoTrue REST), permissions from my_permissions(),
  * data packs from table `packs` (RLS returns only packs the user may read). No secrets here: URL + publishable key are public.
- * Writes/approvals, AI and Cấu hình go through Edge Functions in step B5; until then they are refused with a clear message. */
+ * Writes/approvals, AI, Cấu hình, giá dầu, Maps and hậu kiểm go to the Edge Function `gas` (B5), which checks the level again and
+ * forwards a signed call to Apps Script (src/Bridge.gs). The levels used here only shape the UI. */
 (function () {
   'use strict';
   var C = {
@@ -15,7 +16,6 @@
 
   // ---------- page id (UI) -> resource id (DB) ----------
   var ALIAS = { 'ai/chat': 'chung/ai', 'cfg': 'chung/cfg' };
-  var B5_ONLY = { 'chung/ai': 1, 'chung/cfg': 1 };   // need server calls (B5): hidden for now
   function rid(id) { id = String(id || ''); var p = id.split('/'); var head = p.slice(0, 2).join('/'); return (ALIAS[head] || head) + (p.length > 2 ? '/' + p.slice(2).join('/') : ''); }
   /** my_permissions() lists every catalogued page/tab the user sees (inheritance already resolved). A tab missing from the
    *  catalogue (new in the UI, not yet in resources) falls back to its page. */
@@ -27,7 +27,7 @@
     return par !== r && P[par] !== undefined ? P[par] : 0;
   };
   SBW.known = {};
-  SBW.can = function (id) { var r = rid(id); if (B5_ONLY[r.split('/').slice(0, 2).join('/')]) return false; return SBW.level(id) >= 1; };
+  SBW.can = function (id) { return SBW.level(id) >= 1; };
   SBW.firstPage = function () {
     var out = null;
     (window.MODULES || []).some(function (mo) { return mo.pages.some(function (pg) { var id = mo.id + '/' + pg.id; if (!mo.soon && !pg.soon && SBW.can(id)) { out = id; return true; } return false; }); });
@@ -70,7 +70,7 @@
       .then(function (r) {
         return r.text().then(function (t) {
           var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { }
-          if (!r.ok) throw err((j && (j.msg || j.message || j.error_description || j.error)) || ('HTTP ' + r.status), r.status);
+          if (!r.ok) throw err((j && (j.e || j.msg || j.message || j.error_description || j.error)) || ('HTTP ' + r.status), r.status);
           return j;
         });
       });
@@ -152,10 +152,21 @@
     return packMerge({ kt: { v: '', today: new Date().toISOString().slice(0, 10), src: '', dict: {}, cfg: {}, sc: e(['cn', 'loai', 'pb', 'ma', 'cp', 'n']), sct: e(['pt', 'hk', 'y', 'loai', 'pb', 'ma', 'm']), vt: e(['tra', 'end', 'f', 'dt', 'dau', 'vetc', 'luong', 'khac', 'tk', 'upc', 'n']) } });
   }
 
-  var LATER = 'Chức năng này (ghi, duyệt, gọi máy chủ) sẽ có ở bước tiếp theo. Hiện bản web chỉ để xem.';
+  var LATER = 'Chức năng này chưa có trên bản web.';
+  /** Server call through the Edge Function `gas` -> Apps Script (B5). Resolves with the Apps Script result. */
+  function gas(fn, args) {
+    return api('POST', '/functions/v1/gas', { fn: fn, args: args || [] }).then(function (j) {
+      if (!j || j.ok !== true) throw err((j && j.e) || 'Máy chủ không trả lời.');
+      return j.r;
+    });
+  }
+  SBW.gas = gas;
+  var REMOTE = ['webHqvtSave', 'webHqvtDeXuat', 'webHqvtApprove', 'webHqvtSyncCauHinh', 'webHqvtHauKiem', 'webHqvtMapsKm', 'webGiaDauNow',
+    'webTcktSave', 'webCfgGet', 'webAskFree', 'webAiStatus', 'webAiTest'];
+  function roleOf(lv) { return lv >= 3 ? 'duyet' : lv >= 2 ? 'sua' : 'xem'; }
   var H = {
     webPackVersion: function () {
-      return packVers(['vt', 'kt']).then(function (v) { return { v: verOf(v) || 'none', ai: false, tc: SBW.can('pkte/cn') }; });
+      return packVers(['vt', 'kt']).then(function (v) { return { v: verOf(v) || 'none', ai: SBW.can('chung/ai'), tc: SBW.can('pkte/cn') }; });
     },
     webGetPack: function () {
       return getPacks(['vt', 'kt']).then(function (p) {
@@ -166,18 +177,23 @@
     webHqvtPack: function () {
       return getPacks(['hqvt']).then(function (p) {
         if (!p.hqvt) throw err('Không có quyền xem dữ liệu Hiệu quả VT.');
-        return Object.assign({}, p.hqvt, { canEdit: false, canApprove: false, role: 'xem', me: SBW.user && SBW.user.email, url: '' });
+        var lv = SBW.level('pvt/csvt');   // edit / approve rights of the norm tables (server checks again)
+        return Object.assign({}, p.hqvt, { canEdit: lv >= 2, canApprove: lv >= 3, role: roleOf(lv), me: SBW.user && SBW.user.email, url: '' });
       });
     },
     webTcktPack: function () {
       return getPacks(['tckt']).then(function (p) {
         if (!p.tckt) throw err('Không có quyền xem dữ liệu Kế toán.');
-        return Object.assign({}, p.tckt, { canEdit: false });
+        return Object.assign({}, p.tckt, { canEdit: SBW.level('pkte/cn') >= 2 });
       });
     },
-    webCfgGet: function () { return Promise.resolve({ can: false, msg: LATER }); },
-    webAiStatus: function () { return Promise.resolve([]); }
+    webCfgSave: function () { return Promise.resolve({ ok: false, error: 'Trang Cấu hình chỉ xem. Sửa trực tiếp trong sheet CauHinh của file báo cáo (ô vàng), rồi chạy Cập nhật báo cáo.' }); }
   };
+  REMOTE.forEach(function (fn) {
+    H[fn] = function () {
+      return gas(fn, Array.prototype.slice.call(arguments)).then(function (r) { if (r && r.tables && r.url) r.url = ''; return r; });   // no sheet link on the web
+    };
+  });
   SBW.handlers = H;
   function call(name, args) {
     var f = H[name];
